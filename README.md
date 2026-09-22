@@ -4,11 +4,14 @@ Production-grade Spring Boot backend application.
 
 ## Current Phase
 
-**Phase 1 — Foundation**
+**Phase 2 — Customer REST Resource**
 
-This phase establishes a clean Spring Boot project skeleton only. No business
-APIs, security, caching, resilience, or observability stack have been added
-yet. See `CLAUDE.md` for the full incremental roadmap.
+Phase 1 established a clean Spring Boot project skeleton. Phase 2 adds the
+first production-quality REST resource, `Customer`, backed by a Flyway-managed
+PostgreSQL table, with a layered controller/service/repository architecture,
+DTOs, centralized exception handling, correlation IDs, and tests. Security,
+caching, resilience, Docker, CI/CD, pagination, and auditing are intentionally
+out of scope for this phase. See `CLAUDE.md` for the full incremental roadmap.
 
 ## Technology Stack (Phase 1)
 
@@ -71,9 +74,23 @@ SPRING_PROFILES_ACTIVE=local
 ## Database Schema
 
 Schema management is handled by Flyway. Hibernate DDL auto-generation is
-disabled (`spring.jpa.hibernate.ddl-auto=validate`). No migrations exist yet
-in `src/main/resources/db/migration` — they will be added once entities are
-introduced.
+disabled (`spring.jpa.hibernate.ddl-auto=validate`). The first migration,
+`V1__create_customer_table.sql`, creates the `customers` table.
+
+## API (Phase 2)
+
+Base path: `/api/v1/customers`
+
+| Method | Path                     | Description              |
+|--------|--------------------------|---------------------------|
+| POST   | `/api/v1/customers`      | Create a customer (201)   |
+| GET    | `/api/v1/customers/{id}` | Get a customer by id      |
+| GET    | `/api/v1/customers`      | List all customers        |
+
+Every response carries an `X-Correlation-Id` header (reused from the request
+if present, otherwise generated), and error responses include a structured
+body with `timestamp`, `status`, `error`, `message`, `path`, and
+`correlationId`.
 
 ## Actuator
 
