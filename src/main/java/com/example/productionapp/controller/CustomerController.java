@@ -27,6 +27,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springdoc.core.annotations.ParameterObject;
 
 import java.net.URI;
 
@@ -84,7 +85,7 @@ public class CustomerController {
     })
     @GetMapping
     public ResponseEntity<PageResponse<CustomerResponse>> getAllCustomers(
-            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+            @ParameterObject @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
         return ResponseEntity.ok(PageResponse.from(customerService.getAllCustomers(pageable)));
     }
 
