@@ -1,5 +1,6 @@
 package com.example.productionapp.controller;
 
+import com.example.productionapp.config.OpenApiConfig;
 import com.example.productionapp.dto.CreateCustomerRequest;
 import com.example.productionapp.dto.CustomerResponse;
 import com.example.productionapp.dto.PageResponse;
@@ -11,6 +12,7 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
@@ -34,6 +36,7 @@ import java.net.URI;
 @RestController
 @RequestMapping("/api/v1/customers")
 @Tag(name = "Customers", description = "Customer management API")
+@SecurityRequirement(name = OpenApiConfig.BEARER_SECURITY_SCHEME)
 public class CustomerController {
 
     private static final Logger log = LoggerFactory.getLogger(CustomerController.class);

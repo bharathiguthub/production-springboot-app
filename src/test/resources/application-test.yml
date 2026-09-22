@@ -5,6 +5,14 @@ spring:
   flyway:
     enabled: true
 
+# Test-only credentials for the 'test' profile; never reused outside automated tests.
+security:
+  jwt:
+    secret: dGVzdC1vbmx5LWp3dC1zZWNyZXQtZm9yLWF1dG9tYXRlZC10ZXN0cy1kby1ub3QtcmV1c2U=
+  auth:
+    username: test-user
+    password: test-password
+
 management:
   endpoints:
     web:

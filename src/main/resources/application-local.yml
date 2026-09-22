@@ -7,6 +7,16 @@ spring:
   jpa:
     show-sql: true
 
+# DEVELOPMENT-ONLY defaults, used only when the 'local' profile is active and the
+# corresponding environment variable is not set. Never reuse these values outside
+# local development; production must always supply these externally.
+security:
+  jwt:
+    secret: ${JWT_SECRET:Bj8TIOLZJ9r+t/kHyrXBTaFlFzbZvT07xH8JAr7oT4M=}
+  auth:
+    username: ${APP_USERNAME:devuser}
+    password: ${APP_PASSWORD:devpassword-local-only}
+
 logging:
   level:
     com.example.productionapp: DEBUG

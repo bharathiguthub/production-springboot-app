@@ -32,6 +32,14 @@ spring:
         max-page-size: 100
         one-indexed-parameters: false
 
+security:
+  jwt:
+    secret: ${JWT_SECRET}
+    expiration-ms: ${JWT_EXPIRATION_MS:3600000}
+  auth:
+    username: ${APP_USERNAME}
+    password: ${APP_PASSWORD}
+
 management:
   endpoints:
     web:

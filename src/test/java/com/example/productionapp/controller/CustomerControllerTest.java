@@ -5,12 +5,16 @@ import com.example.productionapp.dto.CustomerResponse;
 import com.example.productionapp.dto.UpdateCustomerRequest;
 import com.example.productionapp.exception.CustomerNotFoundException;
 import com.example.productionapp.exception.DuplicateCustomerException;
+import com.example.productionapp.security.JwtAuthenticationFilter;
 import com.example.productionapp.service.CustomerService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.context.annotation.FilterType;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.MediaType;
@@ -35,7 +39,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(CustomerController.class)
+@WebMvcTest(
+        controllers = CustomerController.class,
+        excludeFilters = @ComponentScan.Filter(type = FilterType.ASSIGNABLE_TYPE, classes = JwtAuthenticationFilter.class))
+@AutoConfigureMockMvc(addFilters = false)
 class CustomerControllerTest {
 
     @Autowired
