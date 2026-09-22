@@ -30,6 +30,8 @@ public class SecurityConfig {
 
     private static final String[] PUBLIC_ENDPOINTS = {
             "/actuator/health",
+            "/actuator/health/liveness",
+            "/actuator/health/readiness",
             "/swagger-ui/**",
             "/swagger-ui.html",
             "/v3/api-docs/**",

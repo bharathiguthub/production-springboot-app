@@ -44,13 +44,21 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,prometheus
+        include: health,info,metrics,prometheus
   endpoint:
     health:
       show-details: when-authorized
+      probes:
+        enabled: true
   health:
     db:
       enabled: true
+
+info:
+  app:
+    name: ${spring.application.name}
+    description: Production-grade Spring Boot backend application
+    version: '@project.version@'
 
 logging:
   pattern:

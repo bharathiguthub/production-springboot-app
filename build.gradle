@@ -60,3 +60,9 @@ dependencyManagement {
 tasks.named('test') {
 	useJUnitPlatform()
 }
+
+processResources {
+	filesMatching('application.yml') {
+		filter { line -> line.replace('@project.version@', version.toString()) }
+	}
+}
