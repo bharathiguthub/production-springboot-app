@@ -8,9 +8,10 @@ import com.example.productionapp.exception.CustomerNotFoundException;
 import com.example.productionapp.exception.DuplicateCustomerException;
 import com.example.productionapp.mapper.CustomerMapper;
 import com.example.productionapp.repository.CustomerRepository;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
@@ -38,8 +39,15 @@ class CustomerServiceTest {
     @Mock
     private CustomerMapper customerMapper;
 
-    @InjectMocks
+    private SimpleMeterRegistry meterRegistry;
+
     private CustomerService customerService;
+
+    @BeforeEach
+    void setUp() {
+        meterRegistry = new SimpleMeterRegistry();
+        customerService = new CustomerService(customerRepository, customerMapper, meterRegistry);
+    }
 
     @Test
     void createCustomer_savesAndReturnsResponse_whenNoDuplicates() {
@@ -181,5 +189,71 @@ class CustomerServiceTest {
                 .isInstanceOf(CustomerNotFoundException.class);
 
         verify(customerRepository, never()).deleteById(any());
+    }
+
+    @Test
+    void createCustomer_incrementsCreatedCounter_whenSuccessful() {
+        CreateCustomerRequest request = new CreateCustomerRequest("CUST-1", "Jane", "Doe", "jane.doe@example.com");
+        Customer entity = new Customer("CUST-1", "Jane", "Doe", "jane.doe@example.com");
+        Customer saved = new Customer("CUST-1", "Jane", "Doe", "jane.doe@example.com");
+        CustomerResponse response = new CustomerResponse(
+                1L, "CUST-1", "Jane", "Doe", "jane.doe@example.com", Instant.now(), Instant.now());
+
+        when(customerRepository.existsByCustomerNumber("CUST-1")).thenReturn(false);
+        when(customerRepository.existsByEmail("jane.doe@example.com")).thenReturn(false);
+        when(customerMapper.toEntity(request)).thenReturn(entity);
+        when(customerRepository.save(entity)).thenReturn(saved);
+        when(customerMapper.toResponse(saved)).thenReturn(response);
+
+        customerService.createCustomer(request);
+
+        assertThat(meterRegistry.get("customer.created.total").counter().count()).isEqualTo(1.0);
+        assertThat(meterRegistry.get("customer.creation.failed.total").counter().count()).isEqualTo(0.0);
+    }
+
+    @Test
+    void createCustomer_incrementsFailedCounter_whenDuplicate() {
+        CreateCustomerRequest request = new CreateCustomerRequest("CUST-1", "Jane", "Doe", "jane.doe@example.com");
+        when(customerRepository.existsByCustomerNumber("CUST-1")).thenReturn(true);
+
+        assertThatThrownBy(() -> customerService.createCustomer(request))
+                .isInstanceOf(DuplicateCustomerException.class);
+
+        assertThat(meterRegistry.get("customer.creation.failed.total").counter().count()).isEqualTo(1.0);
+        assertThat(meterRegistry.get("customer.created.total").counter().count()).isEqualTo(0.0);
+    }
+
+    @Test
+    void createCustomer_recordsTimerData_regardlessOfOutcome() {
+        CreateCustomerRequest request = new CreateCustomerRequest("CUST-1", "Jane", "Doe", "jane.doe@example.com");
+        when(customerRepository.existsByCustomerNumber("CUST-1")).thenReturn(true);
+
+        assertThatThrownBy(() -> customerService.createCustomer(request))
+                .isInstanceOf(DuplicateCustomerException.class);
+
+        assertThat(meterRegistry.get("customer.creation.duration").timer().count()).isEqualTo(1L);
+    }
+
+    @Test
+    void getCustomerById_incrementsRetrievedCounter_whenFound() {
+        Customer customer = new Customer("CUST-1", "Jane", "Doe", "jane.doe@example.com");
+        CustomerResponse response = new CustomerResponse(
+                1L, "CUST-1", "Jane", "Doe", "jane.doe@example.com", Instant.now(), Instant.now());
+        when(customerRepository.findById(1L)).thenReturn(Optional.of(customer));
+        when(customerMapper.toResponse(customer)).thenReturn(response);
+
+        customerService.getCustomerById(1L);
+
+        assertThat(meterRegistry.get("customer.retrieved.total").counter().count()).isEqualTo(1.0);
+    }
+
+    @Test
+    void getCustomerById_doesNotIncrementRetrievedCounter_whenMissing() {
+        when(customerRepository.findById(99L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> customerService.getCustomerById(99L))
+                .isInstanceOf(CustomerNotFoundException.class);
+
+        assertThat(meterRegistry.get("customer.retrieved.total").counter().count()).isEqualTo(0.0);
     }
 }
