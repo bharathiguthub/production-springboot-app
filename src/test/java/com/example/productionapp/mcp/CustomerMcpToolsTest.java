@@ -57,6 +57,48 @@ class CustomerMcpToolsTest {
     }
 
     @Test
+    void getCustomerDetails_rejectsNullCustomerId_withoutCallingCustomerService() {
+        assertThatThrownBy(() -> customerMcpTools.getCustomerDetails(null))
+                .isInstanceOf(McpToolException.class)
+                .hasFieldOrPropertyWithValue("errorCode", McpToolErrorCode.INVALID_ARGUMENTS)
+                .hasMessage("customerId is required");
+
+        verifyNoInteractions(customerService);
+    }
+
+    @Test
+    void getCustomerDetails_rejectsZeroCustomerId_withoutCallingCustomerService() {
+        assertThatThrownBy(() -> customerMcpTools.getCustomerDetails(0L))
+                .isInstanceOf(McpToolException.class)
+                .hasFieldOrPropertyWithValue("errorCode", McpToolErrorCode.INVALID_ARGUMENTS)
+                .hasMessage("customerId must be greater than 0");
+
+        verifyNoInteractions(customerService);
+    }
+
+    @Test
+    void getCustomerDetails_rejectsNegativeCustomerId_withoutCallingCustomerService() {
+        assertThatThrownBy(() -> customerMcpTools.getCustomerDetails(-1L))
+                .isInstanceOf(McpToolException.class)
+                .hasFieldOrPropertyWithValue("errorCode", McpToolErrorCode.INVALID_ARGUMENTS)
+                .hasMessage("customerId must be greater than 0");
+
+        verifyNoInteractions(customerService);
+    }
+
+    @Test
+    void getCustomerDetails_acceptsMinimumValidCustomerId() {
+        CustomerResponse expected = new CustomerResponse(
+                1L, "CUST-1", "Jane", "Doe", "jane.doe@example.com", Instant.now(), Instant.now());
+        when(customerService.getCustomerById(1L)).thenReturn(expected);
+
+        assertThat(customerMcpTools.getCustomerDetails(1L)).isEqualTo(expected);
+
+        verify(customerService).getCustomerById(1L);
+        verifyNoMoreInteractions(customerService);
+    }
+
+    @Test
     void getCustomerList_delegatesRequestedPageAndSizeToCustomerService() {
         when(customerService.getAllCustomers(any(Pageable.class))).thenReturn(Page.empty());
 
@@ -90,7 +132,8 @@ class CustomerMcpToolsTest {
     @Test
     void getCustomerList_rejectsNegativePage_withoutCallingCustomerService() {
         assertThatThrownBy(() -> customerMcpTools.getCustomerList(-1, 10))
-                .isInstanceOf(IllegalArgumentException.class)
+                .isInstanceOf(McpToolException.class)
+                .hasFieldOrPropertyWithValue("errorCode", McpToolErrorCode.INVALID_PAGE)
                 .hasMessage("page must be greater than or equal to 0");
 
         verifyNoInteractions(customerService);
@@ -99,7 +142,8 @@ class CustomerMcpToolsTest {
     @Test
     void getCustomerList_rejectsZeroSize_withoutCallingCustomerService() {
         assertThatThrownBy(() -> customerMcpTools.getCustomerList(0, 0))
-                .isInstanceOf(IllegalArgumentException.class)
+                .isInstanceOf(McpToolException.class)
+                .hasFieldOrPropertyWithValue("errorCode", McpToolErrorCode.INVALID_PAGE_SIZE)
                 .hasMessage("size must be between 1 and 100");
 
         verifyNoInteractions(customerService);
@@ -108,7 +152,8 @@ class CustomerMcpToolsTest {
     @Test
     void getCustomerList_rejectsSizeAboveMaximum_withoutCallingCustomerService() {
         assertThatThrownBy(() -> customerMcpTools.getCustomerList(0, 101))
-                .isInstanceOf(IllegalArgumentException.class)
+                .isInstanceOf(McpToolException.class)
+                .hasFieldOrPropertyWithValue("errorCode", McpToolErrorCode.INVALID_PAGE_SIZE)
                 .hasMessage("size must be between 1 and 100");
 
         verifyNoInteractions(customerService);
