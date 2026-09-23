@@ -22,6 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
@@ -84,5 +85,52 @@ class CustomerMcpToolsTest {
         assertThat(result.totalElements()).isEqualTo(11);
         assertThat(result.totalPages()).isEqualTo(2);
         assertThat(result.last()).isTrue();
+    }
+
+    @Test
+    void getCustomerList_rejectsNegativePage_withoutCallingCustomerService() {
+        assertThatThrownBy(() -> customerMcpTools.getCustomerList(-1, 10))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("page must be greater than or equal to 0");
+
+        verifyNoInteractions(customerService);
+    }
+
+    @Test
+    void getCustomerList_rejectsZeroSize_withoutCallingCustomerService() {
+        assertThatThrownBy(() -> customerMcpTools.getCustomerList(0, 0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("size must be between 1 and 100");
+
+        verifyNoInteractions(customerService);
+    }
+
+    @Test
+    void getCustomerList_rejectsSizeAboveMaximum_withoutCallingCustomerService() {
+        assertThatThrownBy(() -> customerMcpTools.getCustomerList(0, 101))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("size must be between 1 and 100");
+
+        verifyNoInteractions(customerService);
+    }
+
+    @Test
+    void getCustomerList_acceptsMinimumBoundaryPageAndSize() {
+        when(customerService.getAllCustomers(PageRequest.of(0, 1))).thenReturn(Page.empty());
+
+        customerMcpTools.getCustomerList(0, 1);
+
+        verify(customerService).getAllCustomers(PageRequest.of(0, 1));
+        verifyNoMoreInteractions(customerService);
+    }
+
+    @Test
+    void getCustomerList_acceptsMaximumBoundarySize() {
+        when(customerService.getAllCustomers(PageRequest.of(0, 100))).thenReturn(Page.empty());
+
+        customerMcpTools.getCustomerList(0, 100);
+
+        verify(customerService).getAllCustomers(PageRequest.of(0, 100));
+        verifyNoMoreInteractions(customerService);
     }
 }

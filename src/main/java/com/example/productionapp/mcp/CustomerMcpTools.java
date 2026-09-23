@@ -11,6 +11,9 @@ import org.springframework.stereotype.Component;
 @Component
 public class CustomerMcpTools {
 
+    private static final int MIN_PAGE_SIZE = 1;
+    private static final int MAX_PAGE_SIZE = 100;
+
     private final CustomerService customerService;
 
     public CustomerMcpTools(CustomerService customerService) {
@@ -25,8 +28,14 @@ public class CustomerMcpTools {
 
     @Tool(name = "get_customer_list", description = "Retrieve a paginated list of customers.")
     public PageResponse<CustomerResponse> getCustomerList(
-            @ToolParam(description = "Zero-based page index") int page,
-            @ToolParam(description = "Number of customers per page") int size) {
+            @ToolParam(description = "Zero-based page index, must be >= 0") int page,
+            @ToolParam(description = "Number of customers per page, between 1 and 100") int size) {
+        if (page < 0) {
+            throw new IllegalArgumentException("page must be greater than or equal to 0");
+        }
+        if (size < MIN_PAGE_SIZE || size > MAX_PAGE_SIZE) {
+            throw new IllegalArgumentException("size must be between 1 and 100");
+        }
         // Page itself cannot be returned: Spring AI skips @Tool methods whose return type is a
         // java.util.function type, and Page is a Supplier via Streamable.
         return PageResponse.from(customerService.getAllCustomers(PageRequest.of(page, size)));
