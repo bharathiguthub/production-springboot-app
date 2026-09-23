@@ -2,6 +2,8 @@ package com.example.productionapp.mcp;
 
 import com.example.productionapp.AbstractIntegrationTest;
 import com.example.productionapp.config.CorrelationIdFilter;
+import com.example.productionapp.entity.Customer;
+import com.example.productionapp.repository.CustomerRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.client.McpClient;
@@ -14,13 +16,16 @@ import io.modelcontextprotocol.spec.McpSchema.TextContent;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -47,6 +52,11 @@ class McpCorrelationIdIntegrationTest extends AbstractIntegrationTest {
     @LocalServerPort
     private int port;
 
+    @Autowired
+    private CustomerRepository customerRepository;
+
+    private final List<Long> storedCustomerIds = new ArrayList<>();
+
     private McpSyncClient client;
 
     @BeforeEach
@@ -70,6 +80,13 @@ class McpCorrelationIdIntegrationTest extends AbstractIntegrationTest {
     @AfterEach
     void disconnect() {
         client.closeGracefully();
+    }
+
+    // The tool calls commit through the real server, so the rows would otherwise outlive this test and leak
+    // into other integration tests that share the container.
+    @AfterEach
+    void deleteStoredCustomers() {
+        customerRepository.deleteAllById(storedCustomerIds);
     }
 
     @Test
@@ -115,6 +132,37 @@ class McpCorrelationIdIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void customerDetails_returnsInstantsAsIso8601StringsThroughRealTransport() throws Exception {
+        Customer stored = storeCustomer();
+
+        CallToolResult result = client.callTool(
+                new CallToolRequest("get_customer_details", Map.of("customerId", stored.getId())));
+
+        assertThat(result.isError()).isFalse();
+        JsonNode customer = objectMapper.readTree(resultText(result));
+        assertThat(customer.get("id").asLong()).isEqualTo(stored.getId());
+        assertIso8601Instant(customer.get("createdAt"), stored.getCreatedAt());
+        assertIso8601Instant(customer.get("updatedAt"), stored.getUpdatedAt());
+    }
+
+    @Test
+    void customerList_returnsInstantsAsIso8601StringsThroughRealTransport() throws Exception {
+        storeCustomer();
+
+        CallToolResult result = client.callTool(new CallToolRequest("get_customer_list", Map.of("page", 0, "size", 100)));
+
+        assertThat(result.isError()).isFalse();
+        JsonNode customers = objectMapper.readTree(resultText(result)).get("content");
+        assertThat(customers).isNotEmpty();
+        customers.forEach(customer -> {
+            assertThat(customer.get("createdAt").isTextual()).isTrue();
+            assertThat(customer.get("updatedAt").isTextual()).isTrue();
+            assertThat(Instant.parse(customer.get("createdAt").asText())).isNotNull();
+            assertThat(Instant.parse(customer.get("updatedAt").asText())).isNotNull();
+        });
+    }
+
+    @Test
     void concurrentCallsOnOneSession_eachErrorCarriesItsOwnCorrelationId() throws Exception {
         int calls = 24;
         ExecutorService callers = Executors.newFixedThreadPool(8);
@@ -139,6 +187,23 @@ class McpCorrelationIdIntegrationTest extends AbstractIntegrationTest {
         } finally {
             callers.shutdownNow();
         }
+    }
+
+    /**
+     * Stores a customer with unique identifiers, since the PostgreSQL container is shared by all integration
+     * tests, and returns it as re-read from the database so its timestamps carry the stored precision.
+     */
+    private Customer storeCustomer() {
+        String suffix = UUID.randomUUID().toString();
+        Customer saved = customerRepository.saveAndFlush(
+                new Customer("MCP-" + suffix, "Iso", "Instant", "mcp-" + suffix + "@example.com"));
+        storedCustomerIds.add(saved.getId());
+        return customerRepository.findById(saved.getId()).orElseThrow();
+    }
+
+    private static void assertIso8601Instant(JsonNode value, Instant expected) {
+        assertThat(value.isTextual()).as("expected an ISO-8601 string but was %s", value).isTrue();
+        assertThat(Instant.parse(value.asText())).isEqualTo(expected);
     }
 
     private CallToolResult callWithCorrelationId(String correlationId, String toolName, Map<String, Object> arguments) {

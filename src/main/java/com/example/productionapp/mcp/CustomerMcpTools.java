@@ -20,7 +20,8 @@ public class CustomerMcpTools {
         this.customerService = customerService;
     }
 
-    @Tool(name = "get_customer_details", description = "Retrieve customer details by customer ID.")
+    @Tool(name = "get_customer_details", description = "Retrieve customer details by customer ID.",
+            resultConverter = McpToolResultConverter.class)
     public CustomerResponse getCustomerDetails(
             @ToolParam(description = "The positive customer ID of the customer to retrieve, must be greater than 0")
             Long customerId) {
@@ -34,7 +35,8 @@ public class CustomerMcpTools {
         return customerService.getCustomerById(customerId);
     }
 
-    @Tool(name = "get_customer_list", description = "Retrieve a paginated list of customers.")
+    @Tool(name = "get_customer_list", description = "Retrieve a paginated list of customers.",
+            resultConverter = McpToolResultConverter.class)
     public PageResponse<CustomerResponse> getCustomerList(
             @ToolParam(description = "Zero-based page index, must be >= 0") int page,
             @ToolParam(description = "Number of customers per page, between 1 and 100") int size) {
