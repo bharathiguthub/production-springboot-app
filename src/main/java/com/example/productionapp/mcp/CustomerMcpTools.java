@@ -1,9 +1,11 @@
 package com.example.productionapp.mcp;
 
 import com.example.productionapp.dto.CustomerResponse;
+import com.example.productionapp.dto.PageResponse;
 import com.example.productionapp.service.CustomerService;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -19,5 +21,14 @@ public class CustomerMcpTools {
     public CustomerResponse getCustomerDetails(
             @ToolParam(description = "The unique identifier of the customer to retrieve") Long customerId) {
         return customerService.getCustomerById(customerId);
+    }
+
+    @Tool(name = "get_customer_list", description = "Retrieve a paginated list of customers.")
+    public PageResponse<CustomerResponse> getCustomerList(
+            @ToolParam(description = "Zero-based page index") int page,
+            @ToolParam(description = "Number of customers per page") int size) {
+        // Page itself cannot be returned: Spring AI skips @Tool methods whose return type is a
+        // java.util.function type, and Page is a Supplier via Streamable.
+        return PageResponse.from(customerService.getAllCustomers(PageRequest.of(page, size)));
     }
 }

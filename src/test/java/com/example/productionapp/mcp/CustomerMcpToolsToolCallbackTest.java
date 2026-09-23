@@ -11,6 +11,7 @@ import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.method.MethodToolCallbackProvider;
 
 import java.time.Instant;
+import java.util.Arrays;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
@@ -21,7 +22,9 @@ class CustomerMcpToolsToolCallbackTest {
     @Mock
     private CustomerService customerService;
 
-    private ToolCallback toolCallback;
+    private ToolCallback customerDetailsCallback;
+
+    private ToolCallback customerListCallback;
 
     @BeforeEach
     void setUp() {
@@ -31,15 +34,23 @@ class CustomerMcpToolsToolCallbackTest {
                 .build()
                 .getToolCallbacks();
 
-        assertThat(callbacks).hasSize(1);
-        toolCallback = callbacks[0];
+        assertThat(callbacks).hasSize(2);
+        customerDetailsCallback = findByName(callbacks, "get_customer_details");
+        customerListCallback = findByName(callbacks, "get_customer_list");
+    }
+
+    private static ToolCallback findByName(ToolCallback[] callbacks, String name) {
+        return Arrays.stream(callbacks)
+                .filter(callback -> callback.getToolDefinition().name().equals(name))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Tool not registered: " + name));
     }
 
     @Test
     void toolDefinition_isRegisteredWithExpectedNameAndDescription() {
-        assertThat(toolCallback.getToolDefinition().name()).isEqualTo("get_customer_details");
-        assertThat(toolCallback.getToolDefinition().description()).isEqualTo("Retrieve customer details by customer ID.");
-        assertThat(toolCallback.getToolDefinition().inputSchema()).contains("customerId");
+        assertThat(customerDetailsCallback.getToolDefinition().name()).isEqualTo("get_customer_details");
+        assertThat(customerDetailsCallback.getToolDefinition().description()).isEqualTo("Retrieve customer details by customer ID.");
+        assertThat(customerDetailsCallback.getToolDefinition().inputSchema()).contains("customerId");
     }
 
     @Test
@@ -48,9 +59,18 @@ class CustomerMcpToolsToolCallbackTest {
                 42L, "CUST-42", "Jane", "Doe", "jane.doe@example.com", Instant.now(), Instant.now());
         when(customerService.getCustomerById(42L)).thenReturn(response);
 
-        String result = toolCallback.call("{\"customerId\": 42}");
+        String result = customerDetailsCallback.call("{\"customerId\": 42}");
 
         assertThat(result).contains("\"customerNumber\":\"CUST-42\"");
         assertThat(result).contains("\"firstName\":\"Jane\"");
+    }
+
+    @Test
+    void customerListToolDefinition_isRegisteredWithPageAndSizeInputs() {
+        assertThat(customerListCallback.getToolDefinition().description())
+                .isEqualTo("Retrieve a paginated list of customers.");
+        assertThat(customerListCallback.getToolDefinition().inputSchema())
+                .contains("\"page\"")
+                .contains("\"size\"");
     }
 }
