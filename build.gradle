@@ -41,6 +41,8 @@ dependencies {
 	implementation 'org.flywaydb:flyway-core'
 	runtimeOnly 'org.flywaydb:flyway-database-postgresql'
 
+	implementation 'org.springframework.ai:spring-ai-starter-mcp-server-webmvc'
+
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'org.testcontainers:junit-jupiter'
 	testImplementation 'org.testcontainers:postgresql'
@@ -49,11 +51,13 @@ dependencies {
 
 ext {
 	set('testcontainersVersion', "1.21.4")
+	set('springAiVersion', "1.0.9")
 }
 
 dependencyManagement {
 	imports {
 		mavenBom "org.testcontainers:testcontainers-bom:${testcontainersVersion}"
+		mavenBom "org.springframework.ai:spring-ai-bom:${springAiVersion}"
 	}
 }
 
