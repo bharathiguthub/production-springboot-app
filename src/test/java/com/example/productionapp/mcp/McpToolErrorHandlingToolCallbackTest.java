@@ -6,6 +6,7 @@ import com.example.productionapp.exception.CustomerNotFoundException;
 import com.example.productionapp.service.CustomerService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.modelcontextprotocol.common.McpTransportContext;
 import io.modelcontextprotocol.server.McpSyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.MDC;
+import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.mcp.McpToolUtils;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.method.MethodToolCallbackProvider;
@@ -30,6 +32,10 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchRuntimeException;
@@ -195,8 +201,8 @@ class McpToolErrorHandlingToolCallbackTest {
     }
 
     @Test
-    void correlationId_isReadFromMdc() throws Exception {
-        MDC.put(CorrelationIdFilter.MDC_KEY, CORRELATION_ID);
+    void correlationId_isReadFromTransportContext() throws Exception {
+        when(exchange.transportContext()).thenReturn(transportContextWith(CORRELATION_ID));
 
         CallToolResult result = callTool("get_customer_list", Map.of("page", -1, "size", 10));
 
@@ -204,10 +210,145 @@ class McpToolErrorHandlingToolCallbackTest {
     }
 
     @Test
-    void correlationId_isNullWhenMdcHasNone() throws Exception {
+    void correlationId_isNullWhenTransportContextIsEmpty() throws Exception {
+        when(exchange.transportContext()).thenReturn(McpTransportContext.EMPTY);
+
         CallToolResult result = callTool("get_customer_list", Map.of("page", -1, "size", 10));
 
         assertThat(errorJson(result).get("correlationId").isNull()).isTrue();
+    }
+
+    @Test
+    void correlationId_isNullWhenExchangeHasNoTransportContext() throws Exception {
+        CallToolResult result = callTool("get_customer_list", Map.of("page", -1, "size", 10));
+
+        assertThat(errorJson(result).get("correlationId").isNull()).isTrue();
+    }
+
+    @Test
+    void correlationId_isNullWhenCalledWithoutToolContext() throws Exception {
+        RuntimeException thrown = catchRuntimeException(
+                () -> findByName(callbacks, "get_customer_list").call("{\"page\": -1, \"size\": 10}"));
+
+        assertThat(objectMapper.readTree(thrown.getMessage()).get("correlationId").isNull()).isTrue();
+    }
+
+    @Test
+    void correlationId_isNullWhenToolContextHasNoExchange() throws Exception {
+        RuntimeException thrown = catchRuntimeException(() -> findByName(callbacks, "get_customer_list")
+                .call("{\"page\": -1, \"size\": 10}", new ToolContext(Map.of())));
+
+        assertThat(objectMapper.readTree(thrown.getMessage()).get("correlationId").isNull()).isTrue();
+    }
+
+    @Test
+    void correlationId_ignoresStaleMdcValueOnExecutingThread() throws Exception {
+        MDC.put(CorrelationIdFilter.MDC_KEY, "stale-correlation-id");
+
+        CallToolResult result = callTool("get_customer_list", Map.of("page", -1, "size", 10));
+
+        assertThat(errorJson(result).get("correlationId").isNull()).isTrue();
+    }
+
+    @Test
+    void correlationId_isInMdcWhileToolExecutes() {
+        when(exchange.transportContext()).thenReturn(transportContextWith(CORRELATION_ID));
+        AtomicReference<String> mdcDuringCall = new AtomicReference<>();
+        when(customerService.getCustomerById(7L)).thenAnswer(invocation -> {
+            mdcDuringCall.set(MDC.get(CorrelationIdFilter.MDC_KEY));
+            return customer(7L);
+        });
+
+        CallToolResult result = callTool("get_customer_details", Map.of("customerId", 7));
+
+        assertThat(result.isError()).isFalse();
+        assertThat(mdcDuringCall).hasValue(CORRELATION_ID);
+    }
+
+    @Test
+    void mdcIsRemovedAfterSuccessfulCall() {
+        when(exchange.transportContext()).thenReturn(transportContextWith(CORRELATION_ID));
+        when(customerService.getCustomerById(7L)).thenReturn(customer(7L));
+
+        callTool("get_customer_details", Map.of("customerId", 7));
+
+        assertThat(MDC.get(CorrelationIdFilter.MDC_KEY)).isNull();
+    }
+
+    @Test
+    void mdcIsRemovedAfterFailedCall() throws Exception {
+        when(exchange.transportContext()).thenReturn(transportContextWith(CORRELATION_ID));
+        AtomicReference<String> mdcDuringCall = new AtomicReference<>();
+        when(customerService.getCustomerById(99L)).thenAnswer(invocation -> {
+            mdcDuringCall.set(MDC.get(CorrelationIdFilter.MDC_KEY));
+            throw new CustomerNotFoundException("Customer not found with id: 99");
+        });
+
+        CallToolResult result = callTool("get_customer_details", Map.of("customerId", 99));
+
+        assertThat(errorJson(result).get("correlationId").asText()).isEqualTo(CORRELATION_ID);
+        assertThat(mdcDuringCall).hasValue(CORRELATION_ID);
+        assertThat(MDC.get(CorrelationIdFilter.MDC_KEY)).isNull();
+    }
+
+    @Test
+    void previousMdcValueIsRestoredAfterCall() {
+        MDC.put(CorrelationIdFilter.MDC_KEY, "outer-correlation-id");
+        when(exchange.transportContext()).thenReturn(transportContextWith(CORRELATION_ID));
+        AtomicReference<String> mdcDuringCall = new AtomicReference<>();
+        when(customerService.getCustomerById(7L)).thenAnswer(invocation -> {
+            mdcDuringCall.set(MDC.get(CorrelationIdFilter.MDC_KEY));
+            return customer(7L);
+        });
+
+        callTool("get_customer_details", Map.of("customerId", 7));
+
+        assertThat(mdcDuringCall).hasValue(CORRELATION_ID);
+        assertThat(MDC.get(CorrelationIdFilter.MDC_KEY)).isEqualTo("outer-correlation-id");
+    }
+
+    /**
+     * Regression test for the real MCP execution path: the SDK runs tools on a worker thread, so a
+     * correlation ID that exists only in the request thread's MDC must not be what reaches the tool.
+     */
+    @Test
+    void correlationId_isPropagatedToToolExecutedOnAnotherThread() throws Exception {
+        MDC.put(CorrelationIdFilter.MDC_KEY, "request-thread-only-id");
+        when(exchange.transportContext()).thenReturn(transportContextWith(CORRELATION_ID));
+        ExecutorService worker = Executors.newSingleThreadExecutor();
+        try {
+            CallToolResult result = worker
+                    .submit(() -> callTool("get_customer_list", Map.of("page", -1, "size", 10)))
+                    .get(5, TimeUnit.SECONDS);
+
+            assertThat(errorJson(result).get("correlationId").asText()).isEqualTo(CORRELATION_ID);
+            assertThat(worker.submit(() -> MDC.get(CorrelationIdFilter.MDC_KEY)).get(5, TimeUnit.SECONDS))
+                    .isNull();
+        } finally {
+            worker.shutdownNow();
+        }
+    }
+
+    @Test
+    void reusedWorkerThread_doesNotLeakCorrelationIdIntoNextCall() throws Exception {
+        McpSyncServerExchange firstExchange = mock(McpSyncServerExchange.class);
+        McpSyncServerExchange secondExchange = mock(McpSyncServerExchange.class);
+        when(firstExchange.transportContext()).thenReturn(transportContextWith("first-correlation-id"));
+        when(secondExchange.transportContext()).thenReturn(McpTransportContext.EMPTY);
+        ExecutorService worker = Executors.newSingleThreadExecutor();
+        try {
+            CallToolResult first = worker
+                    .submit(() -> callTool(firstExchange, "get_customer_list", Map.of("page", -1, "size", 10)))
+                    .get(5, TimeUnit.SECONDS);
+            CallToolResult second = worker
+                    .submit(() -> callTool(secondExchange, "get_customer_list", Map.of("page", -1, "size", 10)))
+                    .get(5, TimeUnit.SECONDS);
+
+            assertThat(errorJson(first).get("correlationId").asText()).isEqualTo("first-correlation-id");
+            assertThat(errorJson(second).get("correlationId").isNull()).isTrue();
+        } finally {
+            worker.shutdownNow();
+        }
     }
 
     @Test
@@ -256,9 +397,23 @@ class McpToolErrorHandlingToolCallbackTest {
     }
 
     private CallToolResult callTool(String toolName, Map<String, Object> arguments) {
+        return callTool(exchange, toolName, arguments);
+    }
+
+    private CallToolResult callTool(McpSyncServerExchange toolExchange, String toolName, Map<String, Object> arguments) {
         return McpToolUtils.toSyncToolSpecification(findByName(callbacks, toolName))
                 .callHandler()
-                .apply(exchange, new CallToolRequest(toolName, arguments));
+                .apply(toolExchange, new CallToolRequest(toolName, arguments));
+    }
+
+    private static McpTransportContext transportContextWith(String correlationId) {
+        return McpTransportContext.create(
+                Map.of(CorrelationIdTransportContextExtractor.CORRELATION_ID_KEY, correlationId));
+    }
+
+    private static CustomerResponse customer(Long id) {
+        return new CustomerResponse(
+                id, "CUST-" + id, "Jane", "Doe", "jane.doe@example.com", Instant.now(), Instant.now());
     }
 
     private JsonNode errorJson(CallToolResult result) throws Exception {

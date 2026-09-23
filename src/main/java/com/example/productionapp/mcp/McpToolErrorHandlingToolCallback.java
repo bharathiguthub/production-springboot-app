@@ -4,10 +4,12 @@ import com.example.productionapp.config.CorrelationIdFilter;
 import com.example.productionapp.exception.CustomerNotFoundException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.modelcontextprotocol.server.McpSyncServerExchange;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.ai.chat.model.ToolContext;
+import org.springframework.ai.mcp.McpToolUtils;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.ToolDefinition;
 import org.springframework.ai.tool.execution.ToolExecutionException;
@@ -20,6 +22,11 @@ import org.springframework.ai.tool.metadata.ToolMetadata;
  * message as the text content of a {@code CallToolResult} with {@code isError=true}. This decorator
  * therefore rethrows with the serialized {@link McpToolError} as the message. Successful calls are
  * passed through untouched.
+ * <p>
+ * The correlation ID is taken from the MCP transport context carried by the tool's exchange, never from
+ * the executing thread's MDC: the MCP SDK runs tools on a Reactor worker thread that does not share the
+ * HTTP request thread's MDC. For the duration of the call the ID is placed into the worker thread's MDC so
+ * that logs written by the tool and the services it calls carry it too.
  */
 public class McpToolErrorHandlingToolCallback implements ToolCallback {
 
@@ -57,16 +64,38 @@ public class McpToolErrorHandlingToolCallback implements ToolCallback {
 
     @Override
     public String call(String toolInput, ToolContext toolContext) {
+        String correlationId = correlationIdFrom(toolContext);
+        String previousCorrelationId = MDC.get(CorrelationIdFilter.MDC_KEY);
+        putOrRemoveCorrelationId(correlationId);
         try {
             return delegate.call(toolInput, toolContext);
         } catch (RuntimeException ex) {
-            throw new McpToolErrorResponseException(toJson(toMcpToolError(ex)));
+            throw new McpToolErrorResponseException(toJson(toMcpToolError(ex, correlationId)));
+        } finally {
+            // Tool calls run on pooled worker threads, so the call must not leave its ID behind.
+            putOrRemoveCorrelationId(previousCorrelationId);
         }
     }
 
-    private McpToolError toMcpToolError(RuntimeException ex) {
+    private static String correlationIdFrom(ToolContext toolContext) {
+        return McpToolUtils.getMcpExchange(toolContext)
+                .map(McpSyncServerExchange::transportContext)
+                .map(transportContext -> transportContext.get(CorrelationIdTransportContextExtractor.CORRELATION_ID_KEY))
+                .filter(String.class::isInstance)
+                .map(String.class::cast)
+                .orElse(null);
+    }
+
+    private static void putOrRemoveCorrelationId(String correlationId) {
+        if (correlationId == null) {
+            MDC.remove(CorrelationIdFilter.MDC_KEY);
+        } else {
+            MDC.put(CorrelationIdFilter.MDC_KEY, correlationId);
+        }
+    }
+
+    private McpToolError toMcpToolError(RuntimeException ex, String correlationId) {
         String toolName = delegate.getToolDefinition().name();
-        String correlationId = MDC.get(CorrelationIdFilter.MDC_KEY);
 
         // MethodToolCallback wraps every exception thrown by the tool method itself in ToolExecutionException.
         if (ex instanceof ToolExecutionException toolExecutionException) {

@@ -20,6 +20,9 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
 
     public static final String CORRELATION_ID_HEADER = "X-Correlation-Id";
     public static final String MDC_KEY = "correlationId";
+    // Exposes the resolved correlation ID to request-scoped consumers that do not run on this thread's MDC,
+    // such as the MCP transport context extractor.
+    public static final String REQUEST_ATTRIBUTE = CorrelationIdFilter.class.getName() + ".correlationId";
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
@@ -29,6 +32,7 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
             correlationId = UUID.randomUUID().toString();
         }
         MDC.put(MDC_KEY, correlationId);
+        request.setAttribute(REQUEST_ATTRIBUTE, correlationId);
         response.setHeader(CORRELATION_ID_HEADER, correlationId);
 
         long startTime = System.currentTimeMillis();

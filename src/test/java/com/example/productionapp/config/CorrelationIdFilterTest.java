@@ -79,6 +79,32 @@ class CorrelationIdFilterTest {
     }
 
     @Test
+    void doFilterInternal_exposesIncomingCorrelationIdAsRequestAttribute() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/mcp/message");
+        request.addHeader(CorrelationIdFilter.CORRELATION_ID_HEADER, "incoming-correlation-id");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        FilterChain filterChain = (req, res) ->
+                assertThat(MDC.get(CorrelationIdFilter.MDC_KEY)).isEqualTo("incoming-correlation-id");
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        assertThat(request.getAttribute(CorrelationIdFilter.REQUEST_ATTRIBUTE)).isEqualTo("incoming-correlation-id");
+    }
+
+    @Test
+    void doFilterInternal_exposesGeneratedCorrelationIdAsRequestAttribute() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/mcp/message");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        FilterChain filterChain = Mockito.mock(FilterChain.class);
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        assertThat(request.getAttribute(CorrelationIdFilter.REQUEST_ATTRIBUTE))
+                .isNotNull()
+                .isEqualTo(response.getHeader(CorrelationIdFilter.CORRELATION_ID_HEADER));
+    }
+
+    @Test
     void doFilterInternal_clearsMdc_afterSuccessfulRequest() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/customers");
         MockHttpServletResponse response = new MockHttpServletResponse();
