@@ -3,7 +3,9 @@ package com.example.productionapp.mcp;
 import com.example.productionapp.config.CorrelationIdFilter;
 import com.example.productionapp.dto.CustomerResponse;
 import com.example.productionapp.exception.CustomerNotFoundException;
+import com.example.productionapp.exception.RedemptionNotFoundException;
 import com.example.productionapp.service.CustomerService;
+import com.example.productionapp.service.RedemptionService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.common.McpTransportContext;
@@ -36,6 +38,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchRuntimeException;
@@ -55,13 +58,19 @@ class McpToolErrorHandlingToolCallbackTest {
     @Mock
     private CustomerService customerService;
 
+    @Mock
+    private RedemptionService redemptionService;
+
     private ToolCallback[] callbacks;
 
     @BeforeEach
     void setUp() {
-        callbacks = new McpToolConfig()
-                .customerToolCallbackProvider(new CustomerMcpTools(customerService), objectMapper)
-                .getToolCallbacks();
+        McpToolConfig mcpToolConfig = new McpToolConfig();
+        callbacks = Stream.of(
+                        mcpToolConfig.customerToolCallbackProvider(new CustomerMcpTools(customerService), objectMapper),
+                        mcpToolConfig.redemptionToolCallbackProvider(new RedemptionMcpTools(redemptionService), objectMapper))
+                .flatMap(provider -> Arrays.stream(provider.getToolCallbacks()))
+                .toArray(ToolCallback[]::new);
     }
 
     @AfterEach
@@ -106,6 +115,48 @@ class McpToolErrorHandlingToolCallbackTest {
         assertThat(error.get("errorCode").asText()).isEqualTo("CUSTOMER_NOT_FOUND");
         assertThat(error.get("message").asText()).isEqualTo("Customer not found with id: 99");
         assertThat(error.get("retryable").asBoolean()).isFalse();
+    }
+
+    @Test
+    void redemptionNotFound_isMappedToRedemptionNotFoundErrorCode() throws Exception {
+        when(exchange.transportContext()).thenReturn(transportContextWith(CORRELATION_ID));
+        when(redemptionService.getRedemptionByRedemptionId("RDM-9999"))
+                .thenThrow(new RedemptionNotFoundException("Redemption not found with redemptionId: RDM-9999"));
+
+        CallToolResult result = callTool("get_redemption_details", Map.of("redemptionId", "RDM-9999"));
+
+        assertThat(result.isError()).isTrue();
+        JsonNode error = errorJson(result);
+        assertThat(error.get("errorCode").asText()).isEqualTo("REDEMPTION_NOT_FOUND");
+        assertThat(error.get("message").asText()).isEqualTo("Redemption not found with redemptionId: RDM-9999");
+        assertThat(error.get("retryable").asBoolean()).isFalse();
+        assertThat(error.get("correlationId").asText()).isEqualTo(CORRELATION_ID);
+    }
+
+    @Test
+    void missingRedemptionId_reachesToolMethodAndReturnsInvalidArguments() throws Exception {
+        assertInvalidRedemptionId(Map.of(), "redemptionId is required");
+    }
+
+    @Test
+    void blankRedemptionId_returnsInvalidArguments() throws Exception {
+        assertInvalidRedemptionId(Map.of("redemptionId", "   "), "redemptionId must not be blank");
+    }
+
+    @Test
+    void tooLongRedemptionId_returnsInvalidArguments() throws Exception {
+        assertInvalidRedemptionId(Map.of("redemptionId", "R".repeat(65)), "redemptionId must be at most 64 characters");
+    }
+
+    private void assertInvalidRedemptionId(Map<String, Object> arguments, String expectedMessage) throws Exception {
+        CallToolResult result = callTool("get_redemption_details", arguments);
+
+        assertThat(result.isError()).isTrue();
+        JsonNode error = errorJson(result);
+        assertThat(error.get("errorCode").asText()).isEqualTo("INVALID_ARGUMENTS");
+        assertThat(error.get("message").asText()).isEqualTo(expectedMessage);
+        assertThat(error.get("retryable").asBoolean()).isFalse();
+        verifyNoInteractions(redemptionService);
     }
 
     @Test

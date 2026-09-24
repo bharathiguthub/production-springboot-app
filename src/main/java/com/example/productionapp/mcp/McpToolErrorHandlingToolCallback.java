@@ -2,6 +2,7 @@ package com.example.productionapp.mcp;
 
 import com.example.productionapp.config.CorrelationIdFilter;
 import com.example.productionapp.exception.CustomerNotFoundException;
+import com.example.productionapp.exception.RedemptionNotFoundException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.server.McpSyncServerExchange;
@@ -104,6 +105,8 @@ public class McpToolErrorHandlingToolCallback implements ToolCallback {
                         expected(toolName, toolException.getErrorCode(), toolException.getMessage(), correlationId);
                 case CustomerNotFoundException notFound ->
                         expected(toolName, McpToolErrorCode.CUSTOMER_NOT_FOUND, notFound.getMessage(), correlationId);
+                case RedemptionNotFoundException notFound ->
+                        expected(toolName, McpToolErrorCode.REDEMPTION_NOT_FOUND, notFound.getMessage(), correlationId);
                 case null, default -> unexpected(toolName, ex, correlationId);
             };
         }

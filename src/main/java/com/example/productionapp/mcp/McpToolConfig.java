@@ -14,8 +14,18 @@ public class McpToolConfig {
 
     @Bean
     public ToolCallbackProvider customerToolCallbackProvider(CustomerMcpTools customerMcpTools, ObjectMapper objectMapper) {
+        return withErrorHandling(customerMcpTools, objectMapper);
+    }
+
+    // Spring AI's MCP server auto-configuration registers the tools of every ToolCallbackProvider bean.
+    @Bean
+    public ToolCallbackProvider redemptionToolCallbackProvider(RedemptionMcpTools redemptionMcpTools, ObjectMapper objectMapper) {
+        return withErrorHandling(redemptionMcpTools, objectMapper);
+    }
+
+    private static ToolCallbackProvider withErrorHandling(Object toolObject, ObjectMapper objectMapper) {
         ToolCallback[] toolCallbacks = MethodToolCallbackProvider.builder()
-                .toolObjects(customerMcpTools)
+                .toolObjects(toolObject)
                 .build()
                 .getToolCallbacks();
 

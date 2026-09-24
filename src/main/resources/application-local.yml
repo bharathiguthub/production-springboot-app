@@ -7,6 +7,11 @@ spring:
   jpa:
     show-sql: true
 
+  # Local-only sample data (db/seed-local) on top of the schema migrations. Never add this location
+  # to any other profile.
+  flyway:
+    locations: classpath:db/migration,classpath:db/seed-local
+
 # DEVELOPMENT-ONLY defaults, used only when the 'local' profile is active and the
 # corresponding environment variable is not set. Never reuse these values outside
 # local development; production must always supply these externally.

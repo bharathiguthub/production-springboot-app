@@ -75,7 +75,33 @@ SPRING_PROFILES_ACTIVE=local
 
 Schema management is handled by Flyway. Hibernate DDL auto-generation is
 disabled (`spring.jpa.hibernate.ddl-auto=validate`). The first migration,
-`V1__create_customer_table.sql`, creates the `customers` table.
+`V1__create_customer_table.sql`, creates the `customers` table, and
+`V3__create_redemptions_table.sql` creates the read-only `redemptions` table.
+
+### Local seed data
+
+The `local` profile additionally loads `db/seed-local/R__local_seed_redemptions.sql`,
+a repeatable Flyway migration that ensures customer `1` exists and upserts two
+sample redemptions for comparison:
+
+| redemptionId | status  | errorCode        |
+|--------------|---------|------------------|
+| `RDM-1001`   | FAILED  | `VENDOR_TIMEOUT` |
+| `RDM-1002`   | SUCCESS | —                |
+
+Both are 5000 points / 50.00 USD with vendor `PAYPAL`. No other profile loads
+this location, so seed rows never reach test or production databases.
+
+## MCP Tools
+
+| Tool                     | Arguments        | Description                            |
+|--------------------------|------------------|----------------------------------------|
+| `get_customer_details`   | `customerId`     | Customer details by id                 |
+| `get_customer_list`      | `page`, `size`   | Paginated customer list                |
+| `get_redemption_details` | `redemptionId`   | Redemption details by business id      |
+
+The MCP endpoints (`/sse`, `/mcp/message`) are currently unauthenticated and
+are acceptable only for local learning; MCP authentication is a separate phase.
 
 ## API (Phase 2)
 
